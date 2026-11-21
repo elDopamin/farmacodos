@@ -1,6 +1,6 @@
 // Service worker de farmacodos: guarda todo en el celular para usarlo sin conexión.
 // Si cambiás algún archivo, subí el número de VERSION para que se actualice.
-const VERSION = "farmacodos-v1";
+const VERSION = "farmacodos-v2";
 const ARCHIVOS = [
   "./",
   "./index.html",
