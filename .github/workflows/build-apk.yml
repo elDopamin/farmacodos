@@ -1,0 +1,76 @@
+name: Crear APK de farmacodos
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-apk.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Preparar la app web
+        run: |
+          mkdir www
+          cp index.html manifest.webmanifest sw.js icon-192.png icon-512.png icon-maskable-512.png apple-touch-icon.png www/
+
+      - name: Armar el proyecto Android
+        run: |
+          npm init -y
+          npm install @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
+          npx cap init farmacodos com.farmacodos.app --web-dir www
+          npx cap add android
+          npx cap sync android
+
+      - name: Poner el ícono de la app
+        run: |
+          pip install pillow
+          python3 - <<'PY'
+          from PIL import Image, ImageDraw
+          base = "android/app/src/main/res"
+          dens = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
+          icon = Image.open("icon-512.png").convert("RGBA")
+          fore = Image.open("icon-maskable-512.png").convert("RGBA")
+          for d, s in dens.items():
+              p = f"{base}/mipmap-{d}"
+              sq = icon.resize((s, s), Image.LANCZOS)
+              sq.save(f"{p}/ic_launcher.png")
+              big = Image.new("RGBA", (s*4, s*4), (0, 0, 0, 0))
+              ImageDraw.Draw(big).ellipse([0, 0, s*4-1, s*4-1], fill=255)
+              rnd = Image.new("RGBA", (s*4, s*4), (0, 0, 0, 0))
+              rnd.paste(fore.resize((s*4, s*4), Image.LANCZOS), (0, 0), big.split()[3])
+              rnd.resize((s, s), Image.LANCZOS).save(f"{p}/ic_launcher_round.png")
+              fg = int(s * 108 / 48)
+              fore.resize((fg, fg), Image.LANCZOS).save(f"{p}/ic_launcher_foreground.png")
+          open(f"{base}/values/ic_launcher_background.xml", "w").write(
+              '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
+              '    <color name="ic_launcher_background">#0E5E56</color>\n</resources>\n')
+          PY
+
+      - name: Compilar el APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - name: Publicar el APK para descargar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk farmacodos.apk
+          gh release create "apk-${{ github.run_number }}" farmacodos.apk \
+            --title "farmacodos (APK) #${{ github.run_number }}" \
+            --notes "APK para Android. Idea original y recopilación: Francisco «Pancho» Oyero."
